@@ -1,0 +1,40 @@
+name: SAST
+
+# Real-world demo: scan the repo, publish findings to the Security tab,
+# and leave a downloadable HTML report. Report-only (no fail-on) so the run
+# stays green while everything still uploads.
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write   # required for the Security-tab (code scanning) upload
+
+jobs:
+  sast:
+    name: Insomnia SAST scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: scan
+        uses: vulnz/vulnerability@v1
+        with:
+          path: .
+          format: sarif,json,html   # HTML report for humans, SARIF for the Security tab
+          upload-sarif: 'true'
+
+      - name: Findings summary
+        if: always()
+        shell: bash
+        run: |
+          REPORT="$(ls -t sast-report/*.json 2>/dev/null | head -n1 || true)"
+          echo "## Insomnia SAST results" >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$REPORT" ]; then
+            python3 -c "import json,collections;d=json.load(open('$REPORT'));v=d.get('findings') or d.get('vulnerabilities') or d.get('results') or [];c=collections.Counter((x.get('severity') or '?').lower() for x in v);print('**%d findings** — %s'%(len(v),dict(c)))" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- HTML report: **Artifacts → insomnia-sast-report** on this run" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Alerts: **Security → Code scanning**" >> "$GITHUB_STEP_SUMMARY"

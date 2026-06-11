@@ -1,7 +1,8 @@
 name: SAST Action — test matrix
 
+# Manual-only — the everyday scan lives in sast.yml. Run this from the
+# Actions tab when you want the full 14-config robustness sweep.
 on:
-  push:
   workflow_dispatch:
 
 permissions:
@@ -46,6 +47,7 @@ jobs:
           changed-only: ${{ matrix.changed_only || 'false' }}
           upload-sarif: 'false'
           args: ${{ matrix.args || '' }}
+          artifact-name: report-${{ matrix.label }}
 
       - name: Summarize
         if: always()
