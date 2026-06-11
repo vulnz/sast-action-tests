@@ -1,0 +1,64 @@
+name: SAST Action — test matrix
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: "01 full-default",        }
+          - { label: "02 fail-on critical",    fail_on: critical }
+          - { label: "03 fail-on high",        fail_on: high }
+          - { label: "04 fail-on medium",      fail_on: medium }
+          - { label: "05 fail-on low",         fail_on: low }
+          - { label: "06 secrets-only",        secrets_only: 'true', fail_on: high }
+          - { label: "07 no-sca",              no_sca: 'true', fail_on: high }
+          - { label: "08 format sarif-only",   format: 'sarif' }
+          - { label: "09 format html,json",    format: 'html,json' }
+          - { label: "10 subdir sqli",         path: 'vulnerabilities/sqli' }
+          - { label: "11 args all-findings",   args: '--all-findings' }
+          - { label: "12 changed-only",        changed_only: 'true', fetch_depth: 0 }
+          - { label: "13 macOS default",       os: macos-latest }
+          - { label: "14 Windows default",     os: windows-latest }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: ${{ matrix.fetch_depth || 1 }}
+
+      - id: scan
+        continue-on-error: true
+        uses: vulnz/vulnerability@v1
+        with:
+          path: ${{ matrix.path || '.' }}
+          fail-on: ${{ matrix.fail_on || '' }}
+          format: ${{ matrix.format || 'sarif,json' }}
+          secrets-only: ${{ matrix.secrets_only || 'false' }}
+          no-sca: ${{ matrix.no_sca || 'false' }}
+          changed-only: ${{ matrix.changed_only || 'false' }}
+          upload-sarif: 'false'
+          args: ${{ matrix.args || '' }}
+
+      - name: Summarize
+        if: always()
+        shell: bash
+        env:
+          LABEL: ${{ matrix.label }}
+          CODE: ${{ steps.scan.outputs.exit-code }}
+        run: |
+          REPORT="$(ls -t sast-report/*.json 2>/dev/null | head -n1 || true)"
+          SUMMARY="findings=NA"
+          if [ -n "$REPORT" ]; then
+            SUMMARY="$(python3 -c "import json,collections;d=json.load(open('$REPORT'));v=d.get('findings') or d.get('vulnerabilities') or d.get('results') or [];c=collections.Counter((x.get('severity') or '?').lower() for x in v);print('findings=%d sev=%s'%(len(v),dict(c)))" 2>/dev/null || echo 'findings=parse-error')"
+          fi
+          LINE="RESULT | ${LABEL} | exit=${CODE:-NA} | ${SUMMARY}"
+          echo "$LINE"
+          echo "$LINE" >> "$GITHUB_STEP_SUMMARY"
